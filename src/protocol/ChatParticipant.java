@@ -1,12 +1,13 @@
 package protocol;
 
+import java.net.InetAddress;
+
 /**
  * Created by Greg on 9/6/16.
  * Chat participant object
  */
 
 public class ChatParticipant {
-        public String screenName;
-        public String IP;
+        public InetAddress IP;
         public int port;
 }

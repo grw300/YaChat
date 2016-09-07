@@ -7,8 +7,10 @@ import java.net.*;
  * Created by Greg on 9/5/16.
  */
 
+
 interface Context {
-    BufferedReader buffer();
+    DataOutputStream outStream();
+    BufferedReader inStream();
     State state();
     void state(State state);
 }
@@ -20,27 +22,15 @@ interface State {
     boolean process(Context context);
 }
 
-enum YaProtocol implements State {
+public enum YaProtocol implements State {
     HELO {
         public boolean process(Context context) {
-            try {
-                String message = context.buffer().readLine();
-
-            } catch (IOException ioexception){
-
-            }
 
             // read HELO message
             return true;
         }
     }, MESG {
         public boolean process(Context context) {
-            try {
-                String message = context.buffer().readLine();
-
-            } catch (IOException ioexception){
-
-            }
 
             // read HELO message
             return true;

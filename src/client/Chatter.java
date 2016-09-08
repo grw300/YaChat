@@ -46,7 +46,10 @@ public class Chatter extends JFrame {
         enter.setEnabled(true);
 
         enter.addActionListener(
-                (e) -> SendMessage(e.getActionCommand())
+                (e) -> {
+                    this.SendMessage(e.getActionCommand());
+                    enter.setText("");
+                }
         );
 
         c.add(enter, BorderLayout.NORTH);
@@ -98,9 +101,20 @@ public class Chatter extends JFrame {
         }
 
         while (true) {
-            //TODO: Read message from on UDP port;
-            //TODO: Act according to message contents (See protocol)
+            try {
+                // Create a byte buffer/array for the receive Datagram packet
+                byte[] receiveData = new byte[1024];
+                //TODO: Act according to message contents (See protocol) - right now we're writing everything
+                DatagramPacket packet = new DatagramPacket(receiveData, receiveData.length);
+                X.clientSocket.receive(packet);
+                String received = new String(packet.getData(), 0, packet.getLength());
+                X.WriteMessage(received);
+            } catch(Exception e) {
+                System.err.println(e);
+            }
         }
+
+
 
 
     }
@@ -113,9 +127,15 @@ public class Chatter extends JFrame {
                 this.clientSocket.send(new DatagramPacket(message.getBytes(), 0, chatter.IP, chatter.port));
             } catch (IOException e) {
                 display.append(e.getMessage());
+                System.out.println(e.getMessage());
                 System.exit(1);
             }
         }
+    }
+
+    private void WriteMessage( String message )
+    {
+        display.append( "\n" + message ); // write to the TextArea
     }
 
     private void SendExit() {
@@ -124,6 +144,7 @@ public class Chatter extends JFrame {
             this.outToServer.writeBytes(exitMessage);
         } catch (IOException e) {
             display.append(e.getMessage());
+            System.out.println(e.getMessage());
             System.exit(1);
         }
     }

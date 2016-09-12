@@ -39,8 +39,6 @@ public class Chatter extends JFrame {
         this.outToServer = new DataOutputStream(this.serverSocket.getOutputStream());
         this.inFromServer = new BufferedReader(new InputStreamReader(this.serverSocket.getInputStream()));
 
-        //TODO: Setup Action/Events
-
         Container c = getContentPane();
         enter = new JTextField();
         enter.setEnabled(true);
@@ -65,6 +63,9 @@ public class Chatter extends JFrame {
 
         c.add(qbutton, BorderLayout.SOUTH);
         setSize(640, 480);
+
+        this.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+
         this.setVisible(true);
     }
 
@@ -104,19 +105,41 @@ public class Chatter extends JFrame {
             try {
                 // Create a byte buffer/array for the receive Datagram packet
                 byte[] receiveData = new byte[1024];
-                //TODO: Act according to message contents (See protocol) - right now we're writing everything
                 DatagramPacket packet = new DatagramPacket(receiveData, receiveData.length);
                 X.clientSocket.receive(packet);
                 String received = new String(packet.getData(), 0, packet.getLength());
-                X.WriteMessage(received);
+
+                String receivedHandle = received.substring(0,4);
+                String receivedPacket = received.substring(5).replace("\n", "");
+
+                switch(receivedHandle) {
+                    case "MESG":
+                        X.WriteMessage(receivedPacket);
+                        break;
+                    case "JOIN":
+                        String[] receivedPacketValues = receivedPacket.split(" ");
+                        ChatParticipant chatter = new ChatParticipant();
+                        chatter.IP = InetAddress.getByName(receivedPacketValues[1]);
+                        chatter.port = java.lang.Integer.parseInt(receivedPacketValues[2]);
+
+                        X.chatParticipants.put(receivedPacketValues[0], chatter);
+
+                        X.WriteMessage(receivedPacketValues[0] + " has joined the fun!");
+                        break;
+                    case "EXIT":
+                        X.chatParticipants.remove(receivedPacket);
+                        if (receivedPacket.equals(X.screenName)) {
+                            System.exit(0);
+                        } else {
+                            X.WriteMessage(receivedPacket + " has left us all alone.");
+                        }
+                        break;
+                }
+
             } catch(Exception e) {
                 System.err.println(e);
             }
         }
-
-
-
-
     }
 
     private void SendMessage(String actionCommand) {
@@ -124,18 +147,13 @@ public class Chatter extends JFrame {
                 ) {
             String message = "MESG " + this.screenName + ": " + actionCommand + '\n';
             try {
-                this.clientSocket.send(new DatagramPacket(message.getBytes(), 0, chatter.IP, chatter.port));
+                this.clientSocket.send(new DatagramPacket(message.getBytes(), message.getBytes().length, chatter.IP, chatter.port));
             } catch (IOException e) {
                 display.append(e.getMessage());
                 System.out.println(e.getMessage());
                 System.exit(1);
             }
         }
-    }
-
-    private void WriteMessage( String message )
-    {
-        display.append( "\n" + message ); // write to the TextArea
     }
 
     private void SendExit() {
@@ -147,6 +165,11 @@ public class Chatter extends JFrame {
             System.out.println(e.getMessage());
             System.exit(1);
         }
+    }
+
+    private void WriteMessage( String message )
+    {
+        display.append( "\n" + message ); // write to the TextArea
     }
 
 }

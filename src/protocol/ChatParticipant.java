@@ -10,4 +10,8 @@ import java.net.InetAddress;
 public class ChatParticipant {
         public InetAddress IP;
         public int port;
+
+        public String toString(){
+                return IP.getHostAddress() + " " + port;
+        }
 }

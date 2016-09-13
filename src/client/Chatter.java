@@ -11,7 +11,6 @@ import java.util.HashMap;
 import protocol.*;
 
 /**
- * TODO: implement the pseudo-code
  * TODO: Use a protocol state machine?
  */
 
@@ -64,7 +63,7 @@ public class Chatter extends JFrame {
         c.add(qbutton, BorderLayout.SOUTH);
         setSize(640, 480);
 
-        this.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        this.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
 
         this.setVisible(true);
     }
@@ -97,7 +96,7 @@ public class Chatter extends JFrame {
                 X.chatParticipants.put(chatParticipantValues[0], chatter);
             }
         } else {
-            /*TODO: Handle the reject more gracefully!*/
+            System.out.println("Username " + X.screenName + " rejected by server.");
             System.exit(1);
         }
 
@@ -137,7 +136,8 @@ public class Chatter extends JFrame {
                 }
 
             } catch(Exception e) {
-                System.err.println(e);
+                System.out.println(e.getMessage());
+                System.exit(1);
             }
         }
     }

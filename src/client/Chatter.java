@@ -22,6 +22,8 @@ interface Context {
 
     String getPort();
 
+    String getMessage();
+
     DatagramSocket getSocket();
 
     HashMap<String, String> getChattersMap();
@@ -124,6 +126,7 @@ enum Chat implements State {
 public class Chatter implements Context {
 
     String screenName;
+    String message;
     String IP;
     String port;
 
@@ -154,6 +157,11 @@ public class Chatter implements Context {
     @Override
     public String getPort() {
         return port;
+    }
+
+    @Override
+    public String getMessage() {
+        return message;
     }
 
     @Override
@@ -213,8 +221,8 @@ public class Chatter implements Context {
 
         enter.addActionListener(
                 (e) -> {
-                    this.SendMessage(e.getActionCommand());
-                    enter.setText("");
+                    message = e.getActionCommand();
+                    this.state(Chat.SEND_MESG);
                 }
         );
 
@@ -226,7 +234,10 @@ public class Chatter implements Context {
         qbutton = new JButton("QUIT");
         qbutton.setEnabled(true);
         qbutton.addActionListener(
-                (e) -> this.SendExit()
+                (e) -> {
+                    message = "EXIT\n";
+                    this.state(Chat.SEND_EXIT);
+                }
         );
 
         c.add(qbutton, BorderLayout.SOUTH);

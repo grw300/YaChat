@@ -2,78 +2,69 @@ package client;
 
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.*;
-import java.io.*;
-import java.net.*;
-import java.text.MessageFormat;
+import java.io.BufferedReader;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.Socket;
 import java.util.HashMap;
 
-import protocol.*;
-
-/**
- * TODO: Use a protocol state machine?
- */
-
-interface Context {
-
-    String getScreenName();
-
-    String getIP();
-
-    String getPort();
-
-    String getMessage();
-
-    DatagramSocket getSocket();
-
-    HashMap<String, String> getChattersMap();
-
-    void setChattersMap(String chatters);
-
-    DataOutputStream out() throws IOException;
-
-    BufferedReader in() throws IOException;
-
-    State state();
-
-    void state(State state);
-}
 
 interface State {
-    boolean process(Context context) throws IOException;
+    boolean process(Chatter chatter) throws IOException;
 }
 
 enum Chat implements State {
 
     SEND_HELO {
         @Override
-        public boolean process(Context context) throws IOException {
-            String message = String.format("HELO %s %s %s\n", context.getScreenName(), context.getIP(), context.getPort());
-            context.out().writeBytes(message);
-            context.state(Chat.RECV_SERV);
+        public boolean process(Chatter chatter) throws IOException {
+            String message = String.format("HELO %s %s %s\n", chatter.getScreenName(), chatter.getIP(), chatter.getPort());
+            chatter.out().writeBytes(message);
+            chatter.state(Chat.RECV_SERV);
             return true;
         }
     },
     SEND_MESG {
         @Override
-        public boolean process(Context context) throws IOException {
-            return false;
+        public boolean process(Chatter chatter) throws IOException {
+            String message = String.format("MESG %s: %s\n", chatter.getScreenName(), chatter.getMessage());
+
+            for (String chatterLocation : chatter.getChattersMap().values()) {
+                String[] chatterIPPort = chatterLocation.split(" ");
+                chatter.getSocket().send(
+                        new DatagramPacket(
+                                message.getBytes(),
+                                message.getBytes().length,
+                                InetAddress.getByName(chatterIPPort[0]),
+                                Integer.parseInt(chatterIPPort[1])
+                        )
+                );
+            }
+            chatter.state(Chat.RECV_CHAT);
+            return true;
         }
     },
     SEND_EXIT {
         @Override
-        public boolean process(Context context) throws IOException {
-            return false;
+        public boolean process(Chatter chatter) throws IOException {
+            String message = String.format("EXIT %s\n", chatter.getScreenName());
+            chatter.out().writeBytes(message);
+            chatter.state(Chat.RECV_CHAT);
+            return true;
         }
     },
     RECV_SERV {
         @Override
-        public boolean process(Context context) throws IOException {
-            String[] message = processMessage(context.in().readLine());
+        public boolean process(Chatter chatter) throws IOException {
+            String[] message = processMessage(chatter.in().readLine());
             switch (message[0]) {
                 case "ACPT":
-                    context.setChattersMap(message[1]);
-                    context.state(Chat.RECV_CHAT);
+                    chatter.setChattersMap(message[1]);
+                    chatter.state(Chat.RECV_CHAT);
                     return true;
                 case "RJCT":
                     System.out.println(String.format("Username %s is taken.", message[1]));
@@ -86,174 +77,180 @@ enum Chat implements State {
     },
     RECV_CHAT {
         @Override
-        public boolean process(Context context) throws IOException {
-            while (true) {
-                byte[] receiveData = new byte[1024];
-                DatagramPacket packet = new DatagramPacket(receiveData, receiveData.length);
-                context.getSocket().receive(packet);
-                String[] message = processMessage(new String(packet.getData(), 0, packet.getLength()));
-                switch (message[0]) {
-                    case "MESG":
-
-                        context.state(Chat.RECV_CHAT);
-                        return true;
-                    case "JOIN":
-                        context.setChattersMap(message[1]);
+        public boolean process(Chatter chatter) throws IOException {
+            byte[] receiveData = new byte[1024];
+            DatagramPacket packet = new DatagramPacket(receiveData, receiveData.length);
+            chatter.getSocket().receive(packet);
+            String[] message = processMessage(new String(packet.getData(), 0, packet.getLength()));
+            switch (message[0]) {
+                case "MESG":
+                    chatter.display.append(String.format("%s\n", message[1]));
+                    return true;
+                case "JOIN":
+                    String[] newChatter = message[1].split(" ");
+                    String newChatterScreenName = newChatter[0];
+                    if (newChatterScreenName.equals(chatter.getScreenName())) {
+                        chatter.setGui();
+                        chatter.display.append(String.format("%s, I want to thank you for coming. Welcome.\n", newChatterScreenName));
+                        System.out.println(String.format("Your IP is %s.\nYour port is %s.", newChatter[1], newChatter[2]));
+                    } else {
+                        chatter.display.append(String.format("%s has joined us!\n", newChatterScreenName));
+                    }
+                    chatter.setChattersMap(message[1]);
+                    return true;
+                case "EXIT":
+                    if (message[1].equals(chatter.getScreenName())) {
+                        System.out.println("Leaving the chat room.");
                         return false;
-                    case "EXIT":
-                        System.out.println(String.format("Username %s is taken.", message[1]));
-                        return false;
-                    default:
-                        System.out.println("Incorrect protocol.");
-                        return false;
-                }
+                    } else {
+                        chatter.display.append(String.format("%s has left us all alone.\n", message[1]));
+                    }
+                    return true;
+                default:
+                    System.out.println("Incorrect protocol.");
+                    return false;
             }
+
         }
     };
 
     String[] processMessage(String message) {
-        return message.replace("\n","").split(" ", 2);
+        return message.replace("\n", "").split(" ", 2);
     }
-
-/*    Chatter(Socket serverSocket) throws IOException{
-        this.out = new DataOutputStream(serverSocket.getOutputStream());
-        this.in = new BufferedReader(new InputStreamReader(serverSocket.getInputStream()));
-        this.socket = new DatagramSocket();
-    }*/
-
 }
 
-public class Chatter implements Context {
+public class Chatter {
 
-    String screenName;
-    String message;
-    String IP;
-    String port;
+    private String screenName;
+    private String message;
+    private String IP;
+    private String port;
 
-    Socket serverSocket;
-    DataOutputStream out;
-    BufferedReader in;
+    private DataOutputStream out;
+    private BufferedReader in;
+    private DatagramSocket socket = new DatagramSocket();
+    private HashMap<String, String> chattersMap = new HashMap<>();
 
-    DatagramSocket socket = new DatagramSocket();
-    HashMap<String, String> chattersMap = new HashMap<>();
+    private Chat chat;
 
-    Chat chat;
-
-    private JFrame gui;
     private JTextField enter;
-    private JTextArea display;
-    private JButton qbutton;
+    public JTextArea display;
 
-    @Override
     public String getScreenName() {
         return screenName;
     }
 
-    @Override
     public String getIP() {
         return IP;
     }
 
-    @Override
     public String getPort() {
         return port;
     }
 
-    @Override
     public String getMessage() {
         return message;
     }
 
-    @Override
     public DatagramSocket getSocket() {
         return socket;
     }
 
-    @Override
     public HashMap<String, String> getChattersMap() {
         return chattersMap;
     }
 
-    @Override
     public void setChattersMap(String chatters) {
-        for (String chatter: chatters.split(":")) {
-            String[] chatID = chatter.split(" ",2);
+        for (String chatter : chatters.split(":")) {
+            String[] chatID = chatter.split(" ", 2);
             chattersMap.put(chatID[0], chatID[1]);
         }
     }
 
-    @Override
     public DataOutputStream out() throws IOException {
         return out;
     }
 
-    @Override
-    public BufferedReader in() throws IOException{
+    public BufferedReader in() throws IOException {
         return in;
     }
 
-    @Override
     public State state() {
         return chat;
     }
 
-    @Override
     public void state(State state) {
         chat = ((Chat) state);
     }
 
-    Chatter(String[] args) throws IOException{
+    Chatter(String[] args) throws IOException {
 
         screenName = args[0];
-        serverSocket = new Socket(args[1], Integer.parseInt(args[2]));
+        Socket serverSocket = new Socket(args[1], Integer.parseInt(args[2]));
 
-        IP = socket.getLocalAddress().toString();
+        IP = InetAddress.getLocalHost().getHostAddress();
         port = Integer.toString(socket.getLocalPort());
 
-        setGui();
+        out = new DataOutputStream(serverSocket.getOutputStream());
+        in = new BufferedReader(new InputStreamReader(serverSocket.getInputStream()));
     }
 
-    private void setGui() {
-        gui = new JFrame(screenName);
+    void setGui() {
+        JFrame gui = new JFrame(screenName);
+
         Container c = gui.getContentPane();
-        enter = new JTextField();
-        enter.setEnabled(true);
-
-        enter.addActionListener(
-                (e) -> {
-                    message = e.getActionCommand();
-                    this.state(Chat.SEND_MESG);
-                }
-        );
-
-        c.add(enter, BorderLayout.NORTH);
 
         display = new JTextArea();
-        c.add(new JScrollPane(display), BorderLayout.CENTER);
 
-        qbutton = new JButton("QUIT");
-        qbutton.setEnabled(true);
-        qbutton.addActionListener(
-                (e) -> {
-                    message = "EXIT\n";
-                    this.state(Chat.SEND_EXIT);
+        enter = new JTextField();
+        enter.setEnabled(true);
+        enter.addActionListener(
+                (a) -> {
+                    message = a.getActionCommand();
+                    enter.setText("");
+                    this.state(Chat.SEND_MESG);
+                    guiSendMessage(message);
                 }
         );
 
-        c.add(qbutton, BorderLayout.SOUTH);
-        setSize(640, 480);
+        JButton qButton = new JButton("QUIT");
+        qButton.setEnabled(true);
+        qButton.addActionListener(
+                (a) -> {
+                    message = "EXIT\n";
+                    this.state(Chat.SEND_EXIT);
+                    guiSendMessage(message);
+                }
+        );
 
-        this.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
+        c.add(new JScrollPane(display), BorderLayout.CENTER);
+        c.add(enter, BorderLayout.NORTH);
+        c.add(qButton, BorderLayout.SOUTH);
 
-        this.setVisible(true);
+        gui.setSize(640, 480);
+        gui.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
+        gui.setVisible(true);
     }
 
-    public static void main(String[] args) throws IOException{
+    private void guiSendMessage(String message) {
+        try {
+            this.state().process(this);
+        } catch (IOException e) {
+            System.out.println(String.format("There was a problem sending your message: %s.", message));
+            System.exit(1);
+        }
+    }
+
+    public static void main(String[] args) throws IOException {
 
         Chatter X = new Chatter(args);
 
-    }
+        X.state(Chat.SEND_HELO);
 
+        while (X.state().process(X)) ;
+
+        System.exit(0);
+    }
 }
 
 

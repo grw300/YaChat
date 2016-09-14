@@ -18,7 +18,6 @@ public class MemD {
     ServerSocket welcomeSocket;
     DatagramSocket clientSocket;
 
-
     HashMap<String, ChatParticipant> chatParticipants;
 
 
@@ -26,8 +25,6 @@ public class MemD {
         this.chatParticipants = new HashMap<>();
         this.welcomeSocket = new ServerSocket(java.lang.Integer.parseInt(args[0]));
         this.clientSocket = new DatagramSocket();
-
-
     }
 
     public static void main(String[] args) throws Exception {

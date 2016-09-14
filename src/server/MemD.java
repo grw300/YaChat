@@ -1,14 +1,11 @@
 package server;
 
-import protocol.ChatParticipant;
-
 import java.io.BufferedReader;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.*;
 import java.util.HashMap;
-import java.util.List;
 
 /**
  * Created by Greg on 9/12/16.
@@ -18,69 +15,70 @@ public class MemD {
     ServerSocket welcomeSocket;
     DatagramSocket clientSocket;
 
-    HashMap<String, ChatParticipant> chatParticipants;
+    HashMap<String, String> chatParticipants;
 
-
-    MemD(String[] args) throws Exception { //Constructor
-        this.chatParticipants = new HashMap<>();
-        this.welcomeSocket = new ServerSocket(java.lang.Integer.parseInt(args[0]));
-        this.clientSocket = new DatagramSocket();
+    MemD(String[] args) throws IOException {
+        chatParticipants = new HashMap<>();
+        welcomeSocket = new ServerSocket(Integer.parseInt(args[0]));
+        clientSocket = new DatagramSocket();
     }
 
-    public static void main(String[] args) throws Exception {
+    static String[] processMessage(String message) {
+        return message.replace("\n", "").split(" ", 2);
+    }
+
+    public static void main(String[] args) throws IOException {
         DataOutputStream outToClient;
         BufferedReader inFromClient;
 
-        MemD Y = new MemD(args); //Invoke constructor, with command line args as inputs
+        MemD Y = new MemD(args);
 
         while (true) {
             Socket serverSocket = Y.welcomeSocket.accept();
 
-            // Use Y to refer to all Variables declared in the class and initialized in the Constructor
             outToClient = new DataOutputStream(serverSocket.getOutputStream());
             inFromClient = new BufferedReader(new InputStreamReader(serverSocket.getInputStream()));
 
-            String m = inFromClient.readLine();
+            String[] message = MemD.processMessage(inFromClient.readLine());
 
-            String receivedHandle = m.substring(0, 4);
-            String receivedPacket = m.substring(5).replace("\n", "");
-
-            switch (receivedHandle) {
+            switch (message[0]) {
                 case "HELO":
-                    if (Y.chatParticipants.get(receivedPacket) != null) {
-                        String message = "RJCT " + receivedPacket + "\n";
-                        outToClient.writeBytes(message);
+                    if (Y.chatParticipants.get(message[0]) != null) {
+                        outToClient.writeBytes(String.format("RJCT %s\n", message[0]));
                     } else {
-                        String[] chatterInfo = receivedPacket.split(" ");
+                        String[] chatterInfo = message[1].split(" ");
 
-                        ChatParticipant newChatter = new ChatParticipant();
-                        newChatter.IP = ((InetSocketAddress) serverSocket.getRemoteSocketAddress()).getAddress();
-                        newChatter.port = java.lang.Integer.parseInt(chatterInfo[2]);
-                                //((InetSocketAddress) serverSocket.getRemoteSocketAddress()).getPort();
+                        Y.chatParticipants.put(chatterInfo[0], String.format("%s %s", chatterInfo[1], chatterInfo[2]));
 
-                        Y.chatParticipants.put(chatterInfo[0], newChatter);
-
-                        String joinedParticipants = "";
+                        StringBuilder joinedParticipants = new StringBuilder();
 
                         for (String screenName : Y.chatParticipants.keySet()) {
-                            joinedParticipants += screenName + " " + Y.chatParticipants.get(screenName).toString() + ":";
+                            joinedParticipants.append(String.format("%s %s:", screenName, Y.chatParticipants.get(screenName)));
                         }
-                        joinedParticipants = joinedParticipants.substring(0, joinedParticipants.length() - 1);
+                        String participants = joinedParticipants.substring(0, joinedParticipants.length() - 1);
 
-                        outToClient.writeBytes("ACPT " + joinedParticipants + "\n");
+                        outToClient.writeBytes(String.format("ACPT %s\n", participants));
 
-                        String message = "JOIN " + chatterInfo[0] + " " + newChatter.toString() + "\n";
+                        String out = String.format("JOIN %s %s %s\n", chatterInfo[0], chatterInfo[1], chatterInfo[2]);
 
-                        for (ChatParticipant chatter : Y.chatParticipants.values()
-                                ) {
-                            Y.clientSocket.send(new DatagramPacket(message.getBytes(), message.getBytes().length, chatter.IP, chatter.port));
+                        for (String chatter : Y.chatParticipants.values()) {
+                            String[] chatterIPPort = chatter.split(" ", 2);
+                            Y.clientSocket.send(
+                                    new DatagramPacket(
+                                            out.getBytes(),
+                                            out.getBytes().length,
+                                            InetAddress.getByName(chatterIPPort[0]),
+                                            Integer.parseInt(chatterIPPort[1])
+                                    )
+                            );
                         }
 
-                        Child newChild = new Child(chatterInfo[0], serverSocket, Y);
-
+                        Thread t = new Thread(new Child(chatterInfo[0], serverSocket, Y));
+                        t.start();
                     }
                     break;
                 default:
+                    System.out.println(String.format("Incorrect protocol: %s %s", message[0], message[1]));
                     break;
             }
         }
@@ -96,34 +94,36 @@ class Child implements Runnable {
         screenName = s;
         out = o;
         app = Y;
-        Thread t = new Thread(this);
-        t.start();
     }
 
     public void run() {
         try {
-
             BufferedReader inFromClient =
                     new BufferedReader(new
                             InputStreamReader(out.getInputStream()));
 
-            String clientSentence;
-            clientSentence = inFromClient.readLine();
-            String receivedHandle = clientSentence.replace("\n", "").replace(" ", "");
+            String[] in = MemD.processMessage(inFromClient.readLine());
 
-            if (receivedHandle.equals("EXIT")) {
-                String message = "EXIT " + screenName + "\n";
+            if (in[0].equals("EXIT")) {
+                String message = String.format("EXIT %s\n", screenName);
 
-                for (ChatParticipant chatter : app.chatParticipants.values()
-                        ) {
-                    app.clientSocket.send(new DatagramPacket(message.getBytes(), message.getBytes().length, chatter.IP, chatter.port));
+                for (String chatter : app.chatParticipants.values()) {
+                    String[] chatterIPPort = chatter.split(" ", 2);
+                    app.clientSocket.send(
+                            new DatagramPacket(
+                                    message.getBytes(),
+                                    message.getBytes().length,
+                                    InetAddress.getByName(chatterIPPort[0]),
+                                    Integer.parseInt(chatterIPPort[1])
+                            )
+                    );
                 }
                 app.chatParticipants.remove(screenName);
+            } else {
+                System.out.println(String.format("Protocol problems with %s", screenName));
             }
         } catch (IOException e) {
-            System.out.println("Socket problems");
-        } catch (Exception e) {
-            System.out.println(e.getMessage());
+            System.out.println(String.format("Socket problems with %s", screenName));
         }
     }
 }
